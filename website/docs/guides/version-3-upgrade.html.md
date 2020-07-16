@@ -26,6 +26,7 @@ Upgrade topics:
 - [Resource: aws_acm_certificate](#resource-aws_acm_certificate)
 - [Resource: aws_api_gateway_method_settings](#resource-aws_api_gateway_method_settings)
 - [Resource: aws_autoscaling_group](#resource-aws_autoscaling_group)
+- [Resource: aws_cloudwatch_log_group](#resource-aws_cloudwatch_log_group)
 - [Resource: aws_cognito_user_pool](#resource-aws_cognito_user_pool)
 - [Resource: aws_dx_gateway](#resource-aws_dx_gateway)
 - [Resource: aws_dx_gateway_association](#resource-aws_dx_gateway_association)
@@ -613,6 +614,62 @@ resource "aws_autoscaling_group" "example"{
 
   lifecycle {
     ignore_changes = [load_balancers, target_group_arns]
+  }
+}
+```
+
+## Resource: aws_cloudwatch_log_group
+
+### Removal of arn Wildcard Suffix
+
+Previously, the resource returned the Amazon Resource Name (ARN) directly from the API, which included a `:*` suffix to denote all CloudWatch Log Streams under the CloudWatch Log Group. Most other AWS resources that return ARNs and many other AWS services do not use the `:*` suffix. The suffix is now automatically removed. For example, the resource previously returned an ARN such as `arn:aws:logs:us-east-1:123456789012:log-group:/example:*` but will now return `arn:aws:logs:us-east-1:123456789012:log-group:/example`.
+
+Workarounds, such as using `replace()` as shown below, should be removed:
+
+```hcl
+resource "aws_cloudwatch_log_group" "example" {
+  name = "example"
+}
+resource "aws_datasync_task" "example" {
+  # ... other configuration ...
+  cloudwatch_log_group_arn = replace(aws_cloudwatch_log_group.example.arn, ":*", "")
+}
+```
+
+Removing the `:*` suffix is a breaking change for some configurations. Fix these configurations using string interpolations as demonstrated below. For example, this configuration is now broken:
+
+```hcl
+data "aws_iam_policy_document" "ad-log-policy" {
+  statement {
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    principals {
+      identifiers = ["ds.amazonaws.com"]
+      type        = "Service"
+    }
+    resources = [aws_cloudwatch_log_group.example.arn]
+    effect = "Allow"
+  }
+}
+```
+
+An updated configuration:
+
+```hcl
+data "aws_iam_policy_document" "ad-log-policy" {
+  statement {
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    principals {
+      identifiers = ["ds.amazonaws.com"]
+      type        = "Service"
+    }
+    resources = ["${aws_cloudwatch_log_group.example.arn}:*"]
+    effect = "Allow"
   }
 }
 ```
